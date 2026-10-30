@@ -1,0 +1,21 @@
+[project]
+name = "kali-incus"
+version = "0.1.0"
+description = "Incus 上の Kali Linux を普通のコマンド感覚で使う CLI ラッパー"
+requires-python = ">=3.10"
+license = "MIT"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+strict = true
+mypy_path = "src"

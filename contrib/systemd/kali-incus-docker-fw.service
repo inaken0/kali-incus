@@ -1,0 +1,16 @@
+[Unit]
+Description=Docker の FORWARD DROP から Incus のブリッジ (incusbr0) の通信を除外する
+Documentation=file:///usr/local/share/doc/kali-incus/README.md
+After=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# ブリッジ名を変えたい場合は `systemctl edit kali-incus-docker-fw.service` で上書きする
+Environment=KALI_BRIDGE=incusbr0
+ExecStart=/usr/local/libexec/kali-incus/docker-fw.sh start
+ExecStop=/usr/local/libexec/kali-incus/docker-fw.sh stop
+
+[Install]
+WantedBy=docker.service

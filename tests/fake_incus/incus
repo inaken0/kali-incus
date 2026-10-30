@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""テスト用の偽 incus。状態を JSON ファイルに持ち、呼び出しをログへ追記する。
+
+  FAKE_INCUS_STATE  状態ファイル（{"instances": {...}, "images": [...]}）
+  FAKE_INCUS_LOG    呼び出しログ（1 行 1 件の JSON: {"argv": [...], "stdin": "..."}）
+  FAKE_INCUS_CT_INO prep.sh が返す Wayland ソケットの inode（既定: 空）
+  FAKE_INCUS_SSH_INO prep.sh が返す ssh-agent ソケットの inode（既定: 空）
+  FAKE_INCUS_EXIT   本体 exec（setpriv）の終了コード（既定: 0）
+  FAKE_INCUS_SYSTEMD / _SEQ  systemctl is-system-running が返す状態（既定: running。_SEQ はカンマ区切りで順に返す）
+  FAKE_INCUS_SETUP_EXIT / _ERR  setup.sh の終了コードと標準エラー
+"""
+
+import json
+import os
+import sys
+
+STATE = os.environ["FAKE_INCUS_STATE"]
+LOG = os.environ["FAKE_INCUS_LOG"]
+argv = sys.argv[1:]
+
+
+def load():
+    with open(STATE) as f:
+        return json.load(f)
+
+
+def save(state):
+    with open(STATE, "w") as f:
+        json.dump(state, f)
+
+
+def fail(msg, code=1):
+    print(f"Error: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def log(stdin=""):
+    with open(LOG, "a") as f:
+        f.write(json.dumps({"argv": argv, "stdin": stdin}) + "\n")
+
+
+def parse_kv(items):
+    return dict(i.split("=", 1) for i in items)
+
+
+def exec_cmd(state):
+    name = argv[1]
+    inst = state["instances"].get(name) or fail("Instance not found")
+    if "--" not in argv:
+        fail("bad exec")
+    cmd = argv[argv.index("--") + 1 :]
+    stdin = "" if sys.stdin.isatty() or "-T" not in argv else sys.stdin.read()
+    log(stdin)
+    if inst["status"] != "Running":
+        fail("Instance is not running")
+    if cmd[0] == "bash" and cmd[1] == "-c":  # prep.sh
+        out = ["x11=1", "bus=1", f"ino={os.environ.get('FAKE_INCUS_CT_INO', '')}"]
+        out += [f"ssh_ino={os.environ.get('FAKE_INCUS_SSH_INO', '')}"]
+        out += ["user=kali", "gid=1000", "home=/home/kali", "shell=/usr/bin/zsh"]
+        print("\n".join(out))
+    elif cmd[0] == "bash" and cmd[1] == "-s":  # setup.sh
+        print(os.environ.get("FAKE_INCUS_SETUP_ERR", ""), file=sys.stderr)
+        sys.exit(int(os.environ.get("FAKE_INCUS_SETUP_EXIT", "0")))
+    elif cmd[0] == "systemctl":  # is-system-running
+        seq = os.environ.get("FAKE_INCUS_SYSTEMD_SEQ")
+        if seq:  # "a,b,c": 呼ばれるたびに順に返し、最後の値を返し続ける
+            states = seq.split(",")
+            i = int(state.get("sysd_i", 0))
+            state["sysd_i"] = i + 1
+            save(state)
+            print(states[min(i, len(states) - 1)])
+            sys.exit(1 if states[min(i, len(states) - 1)] not in ("running",) else 0)
+        print(os.environ.get("FAKE_INCUS_SYSTEMD", "running"))
+    elif cmd[0] == "setpriv":
+        sys.exit(int(os.environ.get("FAKE_INCUS_EXIT", "0")))
+    sys.exit(0)
+
+
+def main():
+    if not argv:
+        fail("no args")
+    state = load()
+    insts = state["instances"]
+    cmd = argv[0]
+    if cmd == "exec":
+        exec_cmd(state)
+    log()
+    if cmd == "query":
+        path = argv[1]
+        if path == "/1.0/instances?recursion=1":
+            print(json.dumps(list(insts.values())))
+        elif path.endswith("/snapshots?recursion=1"):
+            name = path.split("/")[3]
+            print(json.dumps((insts.get(name) or fail("Not Found")).get("snapshots", [])))
+        elif path.startswith("/1.0/instances/"):
+            print(json.dumps(insts.get(path.split("/")[3]) or fail("Not Found")))
+        else:
+            fail("Not Found")
+    elif cmd == "init":
+        image, name = argv[1], argv[2]
+        if name in insts:
+            fail("Instance already exists")
+        config = parse_kv(argv[i + 1] for i, a in enumerate(argv) if a == "-c")
+        config["volatile.base_image"] = "fp-" + image
+        insts[name] = {"name": name, "status": "Stopped", "config": config, "devices": {}, "snapshots": []}
+        if image not in state["images"]:
+            state["images"].append(image)
+    elif cmd in ("start", "stop"):
+        insts.get(argv[1]) or fail("Not Found")
+        insts[argv[1]]["status"] = "Running" if cmd == "start" else "Stopped"
+    elif cmd == "delete":
+        insts.pop(argv[1], None) or fail("Not Found")
+    elif cmd == "config" and argv[1] == "device":
+        inst = insts.get(argv[3]) or fail("Not Found")
+        if argv[2] == "add":
+            dev = {"type": argv[5], **parse_kv(argv[6:])}
+            if argv[4] in inst["devices"]:
+                fail("The device already exists")
+            inst["devices"][argv[4]] = dev
+        elif argv[2] == "remove":
+            inst["devices"].pop(argv[4], None) or fail("The device doesn't exist")
+    elif cmd == "config" and argv[1] == "set":
+        (insts.get(argv[2]) or fail("Not Found"))["config"].update(parse_kv(argv[3:]))
+    elif cmd == "snapshot":
+        inst = insts.get(argv[2]) or fail("Not Found")
+        if argv[1] == "create":
+            inst["snapshots"].append({"name": argv[3], "created_at": "2026-10-29T00:00:00Z"})
+            inst.setdefault("snapshot_devices", {})[argv[3]] = json.loads(json.dumps(inst["devices"]))
+        elif argv[1] == "delete":
+            inst["snapshots"] = [s for s in inst["snapshots"] if s["name"] != argv[3]]
+        elif argv[1] == "restore":
+            inst["devices"] = inst["snapshot_devices"][argv[3]]
+    elif cmd == "image" and argv[1] == "delete":
+        state["images"] = [i for i in state["images"] if "fp-" + i != argv[2]]
+    else:
+        fail(f"unsupported: {argv}")
+    save(state)
+
+
+main()

@@ -1,0 +1,56 @@
+#compdef kali
+# kali の zsh 補完
+
+_kali_targets() {
+  local -a targets
+  targets=(${(f)"$(kali list 2>/dev/null | awk 'NR>1 { print ($1 == "*") ? $2 : $1 }')"})
+  _describe 'target' targets
+}
+
+_kali() {
+  local -a cmds
+  cmds=(
+    'up:コンテナを作成して起動'
+    'down:停止'
+    'reload:停止して起動し直す'
+    'destroy:削除'
+    'list:管理しているコンテナの一覧'
+    'provision:Kali のツールとシェル環境を導入'
+    'run:コンテナ内でコマンドを実行'
+    'shell:コンテナ内のシェルに接続'
+    'mount:ホストのパスをマウント'
+    'umount:マウントを解除'
+    'ssh-agent:ホストの ssh-agent をコンテナへ渡す設定'
+    'forward:ホストのポートを転送'
+    'unforward:ポート転送を解除'
+    'snapshot:スナップショットの作成・一覧・削除'
+    'restore:スナップショットへ戻す'
+    'help:使い方を表示'
+  )
+  _arguments -C \
+    '(-t --target)'{-t,--target}'[対象のコンテナ名]:target:_kali_targets' \
+    '(-h --help)'{-h,--help}'[使い方を表示]' \
+    '1: :->cmd' \
+    '*:: :->args'
+  case $state in
+    cmd) _describe 'command' cmds ;;
+    args)
+      case $words[1] in
+        down|reload) _arguments '(-f --force)'{-f,--force}'[強制停止]' ;;
+        destroy) _arguments '(-y --yes)'{-y,--yes}'[確認を省略]' '--purge-image[使われていないイメージも削除]' ;;
+        restore) _arguments '(-y --yes)'{-y,--yes}'[確認を省略]' ':snapshot:' ;;
+        mount) _arguments '(-s --source)'{-s,--source}'[ホスト側のパス]:path:_files' \
+                          '(-d --dest)'{-d,--dest}'[Kali 側の絶対パス]:path:' \
+                          '(-r --readonly)'{-r,--readonly}'[読み取り専用]' ;;
+        forward) _arguments '--proto[プロトコル]:proto:(tcp udp)' '--bind[待ち受けアドレス]:addr:' ;;
+        unforward) _arguments '--proto[プロトコル]:proto:(tcp udp)' ;;
+        ssh-agent) _values 'mode' on off ;;
+        snapshot) _values 'subcommand' ls rm ;;
+        provision) _values 'metapackage' kali-linux-default kali-linux-headless kali-linux-large kali-tools-top10 kali-tools-web kali-tools-wireless ;;
+        run) _arguments '--root[root として実行]' '*'{-e,--env}'[環境変数を渡す]:NAME=値:' '*::command:_normal' ;;
+        shell) _arguments '--root[root として実行]' '*'{-e,--env}'[環境変数を渡す]:NAME=値:' ;;
+      esac ;;
+  esac
+}
+
+_kali "$@"
