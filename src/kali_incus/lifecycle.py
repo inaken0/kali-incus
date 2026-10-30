@@ -41,9 +41,8 @@ def wait_boot(cfg: Config) -> None:
     warn(
         f"コンテナの systemd がまだ起動を完了していません（状態: {state or '不明'}）。\n"
         "処理は続けますが、サービスの起動を伴う操作は固まることがあります。\n"
-        "新しいカーネルでは AppArmor がコンテナ内の systemd の signal / ptrace を拒否し、これが起きます。\n"
-        "このツールで作成したコンテナには予め許可を入れています。それ以前に作ったコンテナは、"
-        "次のコマンドで追加し、再起動してください:\n"
+        "原因の一つは、AppArmor がコンテナ内の systemd の signal / ptrace を拒否することです（Ubuntu 26.04 で確認）。\n"
+        "コンテナに AppArmor の許可（raw.apparmor）が無い場合は、次のコマンドで追加し、再起動してください:\n"
         f"  incus config set {cfg.target} raw.apparmor='{APPARMOR_RAW}'\n"
         f"  kali {flag}reload"
     )

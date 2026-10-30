@@ -17,7 +17,7 @@ PROVISIONED_KEY = "user.kali-incus.provisioned"
 SSH_AGENT_KEY = "user.kali-incus.ssh-agent"  # "true" のコンテナにホストの ssh-agent を渡す（kali ssh-agent on）
 
 # コンテナ内のプロセスが、同じコンテナ内のプロセスへ signal / ptrace を送れるようにする追加ルール（peer を限定）。
-# 新しいカーネル / AppArmor では、次の 2 種類の相手に対する signal と ptrace が拒否される（実機で確認済み）。
+# Ubuntu 26.04 の既定では、次の 2 種類の相手に対する signal と ptrace が拒否される（実機で確認済み）。
 #  1. コンテナ自身の積み重ねたプロファイル (…//&unconfined): 拒否されると systemd が起動を完了できない
 #  2. ホストのプロファイルがパスで一致して積み重なったもの (例: firefox//&incus-<名前>_…):
 #     ホストの Ubuntu の firefox プロファイルは /usr/lib/firefox-esr/firefox-esr にも一致するため、

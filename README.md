@@ -62,7 +62,7 @@ kali shell
 ## 使い方
 
 ```sh
-kali up                      # 作成して起動（初回はイメージ取得と初期設定で数分）
+kali up                      # 作成して起動
 kali run firefox-esr         # GUI アプリもそのまま
 kali run nmap -sV 10.0.0.1
 kali run -e LANG=ja_JP.UTF-8 firefox-esr   # 環境変数を渡す（詳しくは「環境変数を渡す」）
@@ -83,9 +83,8 @@ kali list                          # 管理しているコンテナ（現在の 
 ### 環境変数を渡す（`-e`）
 
 ```sh
-kali run -e JAVA_ARGS=-Dsun.java2d.uiScale=2 burpsuite
-kali run -e QT_QPA_PLATFORMTHEME=gtk3 -e QT_QPA_PLATFORM=xcb wireshark
-kali shell -e FOO=bar
+kali run -e LANG=ja_JP.UTF-8 firefox-esr
+kali shell -e FOO=bar -e BAR=baz
 ```
 
 - `-e NAME=値`（または `--env NAME=値`、`--env=NAME=値`）を、コマンドの前に何個でも置けます。最初に `-e` 以外が現れた所からが、コンテナ内で実行するコマンドです（`--` で区切れば、`-e` で始まるコマンドも実行できます）。
@@ -101,8 +100,8 @@ kali shell --root               # root のログインシェル
 ```
 
 - 通常のユーザーは raw ソケットを開けないため（`Operation not permitted`）、`nmap -sS` などは root が必要です。`--root` を付けると、ユーザーへの切り替えをせず、root として実行します。
-- GUI アプリも使えます。Wayland のソケット（`/run/user/<uid>/`）と、X11 の cookie（ユーザーの `~/.Xauthority`）を使うように環境変数を設定します。`HOME` は `/root` になります。
-- ユーザーの D-Bus のセッションバスは root から接続できないため、渡しません。
+- GUI アプリも使えます。`HOME` は `/root` になります。
+- ユーザーの D-Bus セッションには接続できないため、D-Bus を使う機能は動かないことがあります。
 - `-e` と組み合わせられます（`kali run --root -e FOO=bar cmd`）。オプションはコマンドの前に置きます。
 - コンテナの root は、ホストでは権限のないユーザーに対応します（ユーザー名前空間）。
 
@@ -117,11 +116,10 @@ kali provision kali-tools-top10         # 好きなメタパッケージを指�
 
 `kali up` で作られるコンテナは最小構成です。`kali provision` を実行すると、Kali をインストールした直後と同じ使い心地になります。
 
-- **ツール**: 指定したメタパッケージ（省略時は `kali-linux-default`）を導入します。数 GB のダウンロードになることがあります。
-- **シェル環境**: Kali 標準の zsh 設定（`kali-defaults` の `/etc/skel`）と、zsh-autosuggestions / zsh-syntax-highlighting を導入します。
-- **フォント**: `fonts-noto-core` と `fonts-noto-cjk`（日本語・中国語・韓国語）を導入し、fontconfig の設定（`/etc/fonts/conf.d/69-kali-incus-noto-cjk.conf`）で、日本語などのフォールバックを Noto CJK にします。既定は日本語（Noto Sans CJK JP）で、中国語・韓国語のページでは地域に合った字形（SC / TC / HK / KR）を選びます。ダウンロードは約 65 MB です。Firefox は起動し直すと反映されます。
-- **見た目**: `kali-themes`（テーマ・アイコン・フォント）を導入します。GTK テーマは `/etc/dconf/db/local.d/20-kali-incus-theme` で `Kali-Dark` / `Flat-Remix-Blue-Dark` に指定します（Kali の既定の `adw-gtk3-dark` は Kali のリポジトリに無いため）。ユーザー自身の設定（`dconf write` や `~/.config/gtk-3.0/settings.ini`）が優先されます。ウィンドウの枠やタイトルバーはホストの GNOME が描くため、変わりません。
-- **NFS**: `nfs-common` が作る `run-rpc_pipefs.mount` は、コンテナ内ではマウントに失敗して `systemctl status` が `degraded` になるため、`mask` します。
+- 指定したメタパッケージ（省略時は `kali-linux-default`）を導入します。数 GB のダウンロードになることがあります。
+- Kali 標準の zsh 設定と、zsh-autosuggestions / zsh-syntax-highlighting を導入します。
+- 日本語・中国語・韓国語のフォント（Noto CJK）を導入します。Firefox は起動し直すと反映されます。
+- GUI アプリを Kali の暗いテーマ（`Kali-Dark`）にします。自分で変えたテーマの設定が優先されます。ウィンドウの枠やタイトルバーはホストの GNOME が描くため、変わりません。
 - 何度実行しても構いません。すでにあるユーザーの設定ファイルは上書きせず、足りないものだけ補います。
 - 未作成の target なら、`run` と同じように作成してから導入します。
 - デスクトップ環境は入れません。
@@ -191,49 +189,24 @@ kali snapshot rm base
 
 ## GUI について
 
-- Wayland ソケットは `/mnt/.kali-host/wayland` にマウントされます。ホストで再ログインしても、`run` / `shell` のたびに inode を比べて付け直します。
+- ホストで再ログインしても、コンテナを再起動せずに GUI アプリを使えます。
 - GUI セッションがない（SSH など）ときは、GUI の準備を省きます。後から GUI セッションで `kali run` すれば、`down` / `up` なしで使えます。すでに起動済みのプロセスは GUI につながらないため、起動し直してください。
 - コンテナ内の systemd ユーザーサービスには、Wayland 関連の環境変数は渡りません。
 
 ### 見た目と表示サイズ
 
-- **GTK アプリ**（Firefox、zenmap など）は、`kali provision` で Kali の暗いテーマ（`Kali-Dark`）になります。設定の詳細は「ツールとシェル環境の導入」を参照してください。
-- **Qt アプリ**（Wireshark など）は、`kali run` が環境変数 `QT_QPA_PLATFORMTHEME=gtk3` を渡すため、GTK のテーマ（`Kali-Dark`）で表示されます。これには `qt5-gtk-platformtheme` / `qt6-gtk-platformtheme` が必要で、`kali provision` が入れます。GUI セッションがないときは渡しません。別のテーマにしたい場合は `-e QT_QPA_PLATFORMTHEME=...` で上書きできます。
-- Burp Suite など Java (Swing) のアプリは、高解像度ディスプレイで小さく表示されます。XWayland の X11 アプリは自動で拡大されず、Java も拡大率を検出できないためです。JVM に拡大率を渡してください。
+- GTK アプリ（Firefox、zenmap など）と Qt アプリ（Wireshark など）は、`kali provision` 後は Kali の暗いテーマで表示されます。Qt アプリのテーマは `-e QT_QPA_PLATFORMTHEME=...` で変えられます。
+- Burp Suite など Java のアプリは、高解像度ディスプレイでは小さく表示されます。`JAVA_ARGS` で拡大率を指定してください（整数のみ。`1.5` などは無視されます）。Ghidra など他の Java アプリにも使えます。
 
   ```sh
   kali run -e JAVA_ARGS=-Dsun.java2d.uiScale=2 burpsuite
   ```
 
-  - `JAVA_ARGS` は、Kali の Java ラッパー (`java-wrappers`) が JVM のオプションとして渡す環境変数です。
-  - 指定できるのは整数だけです。`-Dsun.java2d.uiScale=1.5` は無視されます（Java 25 の X11）。150% などの表示は、現状ではできません。
-  - 拡大するとフォントのアンチエイリアスの見え方が変わることがあります。
-
-#### Java の拡大率を、自分の環境の既定にする
-
-Java の拡大率は、ディスプレイや GNOME の設定によって変わるため、`kali run` の既定の環境変数には入れていません。ホスト側のシェルやランチャーに、自分の環境の値を書いておきます。
-
-- **シェルのエイリアス**（`~/.zshrc` や `~/.bashrc`）:
+  拡大率はディスプレイによって違うため、`kali` の既定には入れていません。毎回指定するのが面倒なら、エイリアスにしてください。
 
   ```sh
   alias burp='kali run -e JAVA_ARGS=-Dsun.java2d.uiScale=2 burpsuite'
   ```
-
-- **モニターごとに値が違う**ときは、変数にしておくと切り替えられます。
-
-  ```sh
-  export KALI_JAVA_SCALE=2          # 例: 外付けの 5K は 2、ノート PC は 1
-  alias burp='kali run -e JAVA_ARGS=-Dsun.java2d.uiScale=${KALI_JAVA_SCALE:-1} burpsuite'
-  ```
-
-- **スクリプト**にする場合（`~/.local/bin/burp`、実行権限を付ける）:
-
-  ```sh
-  #!/bin/sh
-  exec kali run -e "JAVA_ARGS=-Dsun.java2d.uiScale=${KALI_JAVA_SCALE:-2}" burpsuite "$@"
-  ```
-
-`JAVA_ARGS` が影響するのは Java のアプリだけです。他の Java アプリ（Ghidra など）にも同じ指定が使えます。
 
 ## Docker と併用する場合（ネットワーク設定）
 
@@ -269,8 +242,7 @@ systemctl status kali-incus-docker-fw.service     # active (exited)
 sudo iptables -S DOCKER-USER                       # incusbr0 の ACCEPT が 2 行ある
 ```
 
-- ユニットは `docker.service` に紐づいています。Docker の起動・再起動のたびにルールを入れ直し、Docker を止めると外します。
-  ルールは重ねて追加されません（何度実行しても同じ結果になります）。
+- Docker の起動・再起動のたびにルールを入れ直し、Docker を止めると外します。
 - IPv6 は、Docker が `ip6tables` を使っている（`DOCKER-USER` が `ip6tables` にもある）場合だけ設定します。
 - ブリッジ名が `incusbr0` 以外のときは、`sudo systemctl edit kali-incus-docker-fw.service` で上書きします。
 
@@ -299,9 +271,7 @@ sudo ufw route allow out on incusbr0
 
 ## AppArmor の追加ルールについて
 
-新しいカーネルと AppArmor の組み合わせ（検証したのはカーネル 7.0.0-42 / Incus 6.0.5）では、コンテナ内の systemd の `signal` / `ptrace` が AppArmor に拒否され、コンテナの起動処理が完了しません（`systemctl is-system-running` が `initializing` のまま止まり、`apt` が固まります）。
-
-そのため `kali up` は、新規に作るコンテナの `raw.apparmor` に次の 4 行を設定します。
+Ubuntu 26.04 では、Incus の既定のままだと AppArmor がコンテナ内の systemd を妨げ、コンテナが起動しきりません。そのため `kali up` は、作成するコンテナに次の許可（`raw.apparmor`）を追加します。
 
 ```
 signal peer=incus-**//&unconfined,
@@ -310,34 +280,17 @@ signal peer=**//&incus-**,
 ptrace peer=**//&incus-**,
 ```
 
-- 前半の 2 行は、systemd が起動を完了するために必要です。
-- 後半の 2 行は、ホストの AppArmor プロファイル（Ubuntu 標準の `firefox` など）がコンテナ内の同じパスのプロセスにも一致して積み重なるときのためのものです。ないと Firefox が子プロセスに `SIGTERM` を送れず、終了できません。
-- 許可する相手（peer）は Incus のコンテナのプロファイルを持つプロセスに限られ、そのコンテナのプロファイルにだけ適用されます。`kali destroy` でプロファイルごと消えます。
-- Incus やカーネルの更新でこの問題が直れば、不要になります。
-
-ホストの `kernel.apparmor_restrict_unprivileged_userns=1` による、コンテナ内のユーザー名前空間の作成 (`userns_create`) の拒否は緩めません。Firefox や `bwrap` は、サンドボックスが弱まった状態で動くことがあります。
-
-すでにあるコンテナ（このツールを使わずに作ったものなど）には設定しません。`kali up` / `kali run` で `systemd がまだ起動を完了していません` と警告されたら、表示されるコマンドで追加し、再起動してください（`kali` の部分はコンテナ名です）。
-
-```sh
-incus config set kali raw.apparmor='signal peer=incus-**//&unconfined,
-ptrace peer=incus-**//&unconfined,
-signal peer=**//&incus-**,
-ptrace peer=**//&incus-**,'
-kali reload
-```
+- 許可する相手は、Incus のコンテナ内のプロセスに限られます。ホスト全体の AppArmor の設定は変えません。後半の 2 行は、Firefox を正常に終了させるために必要です。
+- ホストのユーザー名前空間の制限は緩めません。そのため、Firefox などはサンドボックスが弱まった状態で動くことがあります。
 
 ## トラブルシューティング
 
 - **`kali up` の初期設定で `Unable to connect to kali.download` と出る**: 上の「Docker と併用する場合」を参照してください。
-- **`systemd がまだ起動を完了していません` と警告される**: 上の「AppArmor の追加ルールについて」を参照してください。
 - **incus-admin に所属しているのに権限エラーになる**: 一度ログアウトして再ログインしてください。
 
 ## 既知の問題
 
-- **`kali provision` の直後は `systemctl status` が `degraded` になる**: 失敗したユニットが残るためです（原因は特定していません）。
-  `kali reload` で再起動すると解消し、`running` になります。動作に支障はないため、現時点では対処していません。`kali provision kali-tools-top10` のように
-  小さいメタパッケージでは `running` のままです。失敗したユニットは `kali run --root systemctl --failed` で確認できます。
+- **`kali provision` の直後は `systemctl status` が `degraded` になる**: 動作に支障はありません。`kali reload` で再起動すると解消します。
 
 ## 開発
 
